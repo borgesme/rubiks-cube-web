@@ -4,6 +4,3 @@
 skills-lock.json
 .superpowers/
 dist
-node_modules
-package.json
-package-lock.json

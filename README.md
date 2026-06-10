@@ -1,5 +1,11 @@
 # 高保真 魔方 3 x 3
 
+## 在线体验
+
+> [GitHub Pages：borgesme.github.io/rubiks-cube-web](https://borgesme.github.io/rubiks-cube-web/)
+
+通过 GitHub Actions 自动部署：推送到 `main` 分支后，workflow 将单文件 `index.html` 发布到 GitHub Pages。
+
 ## DEMO参考
 
 > [linux.do | Claude-Fable-5-Max Three.js魔方测试](https://linux.do/t/topic/2364074)
