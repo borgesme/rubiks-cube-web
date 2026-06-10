@@ -71,6 +71,58 @@ const AXES = {
   z: new THREE.Vector3(0, 0, 1),
 };
 
+/* ========== 2. 纹理工厂（Canvas 程序化生成，零外部素材） ========== */
+const materialCache = new Map();
+
+// 绘制带圆角贴纸的纹理：黑边底色 + 圆角主体色 + 暗描边 + 顶部高光渐变
+function createStickerTexture(colorHex) {
+  const S = 256, PAD = 18, R = 32;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = S;
+  const ctx = canvas.getContext('2d');
+  // 塑料黑边底色
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, S, S);
+  // 圆角贴纸主体
+  ctx.beginPath();
+  ctx.roundRect(PAD, PAD, S - PAD * 2, S - PAD * 2, R);
+  ctx.fillStyle = colorHex;
+  ctx.fill();
+  // 边缘微暗描边，增强倒角立体感
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  // 顶部高光渐变，模拟贴纸塑料反光
+  const grad = ctx.createLinearGradient(0, PAD, 0, S * 0.6);
+  grad.addColorStop(0, 'rgba(255,255,255,0.28)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.roundRect(PAD, PAD, S - PAD * 2, S - PAD * 2, R);
+  ctx.fill();
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+function getMaterial(colorHex) {
+  if (!materialCache.has(colorHex)) {
+    materialCache.set(colorHex, new THREE.MeshStandardMaterial({
+      map: createStickerTexture(colorHex),
+      roughness: 0.35,
+      metalness: 0.05,
+    }));
+  }
+  return materialCache.get(colorHex);
+}
+
+// 内侧不外露面的纯黑塑料材质
+const blackMaterial = new THREE.MeshStandardMaterial({
+  color: 0x0a0a0a, roughness: 0.6, metalness: 0.05,
+});
+
 /* ========== 3. 场景搭建 ========== */
 const container = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -126,6 +178,39 @@ window.addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+/* ========== 4. 魔方构建 ========== */
+const cubies = [];
+const cubieGeometry = new THREE.BoxGeometry(CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE);
+
+function buildCube() {
+  for (let x = -1; x <= 1; x++)
+  for (let y = -1; y <= 1; y++)
+  for (let z = -1; z <= 1; z++) {
+    // BoxGeometry 材质顺序：+x, -x, +y, -y, +z, -z；仅外露面贴彩色贴纸
+    const mats = [
+      x === 1  ? getMaterial(FACE_COLORS.px) : blackMaterial,
+      x === -1 ? getMaterial(FACE_COLORS.nx) : blackMaterial,
+      y === 1  ? getMaterial(FACE_COLORS.py) : blackMaterial,
+      y === -1 ? getMaterial(FACE_COLORS.ny) : blackMaterial,
+      z === 1  ? getMaterial(FACE_COLORS.pz) : blackMaterial,
+      z === -1 ? getMaterial(FACE_COLORS.nz) : blackMaterial,
+    ];
+    const cubie = new THREE.Mesh(cubieGeometry, mats);
+    cubie.position.set(x * STEP, y * STEP, z * STEP);
+    cubie.castShadow = true;
+    cubie.receiveShadow = true;
+    scene.add(cubie);
+    cubies.push(cubie);
+  }
+}
+
+function destroyCube() {
+  for (const c of cubies) scene.remove(c);
+  cubies.length = 0;
+}
+
+buildCube();
 
 /* ========== 8. 主循环 ========== */
 const tweenGroup = new TWEEN.Group();
