@@ -279,6 +279,123 @@ function rotateLayer(axis, layerCoord, direction, duration, onComplete) {
 // 临时调试出口（Task 5 移除）
 window.__cube = { rotateLayer, selectLayer, cubies };
 
+/* ========== 6. 手势系统 ========== */
+const raycaster = new THREE.Raycaster();
+const pointerNDC = new THREE.Vector2();
+
+// 世界坐标 → 屏幕像素坐标
+function worldToScreen(v) {
+  const p = v.clone().project(camera);
+  return new THREE.Vector2((p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight);
+}
+
+let drag = null; // 当前手势状态
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || isRotating || drag) return;
+  pointerNDC.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(pointerNDC, camera);
+  const hits = raycaster.intersectObjects(cubies);
+  if (!hits.length) return;
+
+  const hit = hits[0];
+  // 表面法线：face.normal 为局部坐标，变换到世界空间后取整对齐坐标轴
+  const normal = hit.face.normal.clone()
+    .applyQuaternion(hit.object.getWorldQuaternion(new THREE.Quaternion()))
+    .round();
+
+  drag = {
+    point: hit.point.clone(),  // 点击处世界坐标
+    normal,                    // 世界空间表面法线（轴对齐）
+    start: new THREE.Vector2(e.clientX, e.clientY),
+    determined: false,         // 是否已判定旋转轴
+    pivot: null, axis: null, angle: 0,
+    screenDir: null, pixelsPerUnit: 0, radius: 0,
+  };
+  renderer.domElement.setPointerCapture(e.pointerId);
+});
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const D = new THREE.Vector2(e.clientX, e.clientY).sub(drag.start);
+
+  if (!drag.determined) {
+    if (D.length() < DEAD_ZONE) return;
+
+    /**
+     * 手势投影算法（核心考点）：
+     * 1. 法线 N 排除自身所在轴，剩下两个世界轴为候选旋转轴 A；
+     * 2. 绕轴 A 转动时，点击点沿切线 T = A × N 移动（叉乘）；
+     * 3. 将 T 投影到屏幕得 2D 向量 S，与鼠标位移 D 做点积；
+     * 4. |dot| 最大者 = 与滑动方向最匹配的轴，即为用户意图。
+     *
+     * 方向修正：旋转角直接取带符号的 dot(D, S)。点击点沿法线方向的
+     * 分量恒为正（永远点在外表面），绕 A 正向旋转必使该点沿 +T 移动，
+     * 因此 dot > 0 ⇔ 鼠标顺切线滑 ⇔ 层顺切线转——无论从正面、背面
+     * 还是顶面操作，跟手方向天然一致，无需按面分类取反。
+     */
+    const candidates = [];
+    for (const name of ['x', 'y', 'z']) {
+      if (Math.abs(drag.normal[name]) > 0.5) continue; // 排除法线所在轴
+      const tangent = new THREE.Vector3().crossVectors(AXES[name], drag.normal);
+      const s0 = worldToScreen(drag.point);
+      const s1 = worldToScreen(drag.point.clone().add(tangent));
+      candidates.push({ name, screenVec: s1.sub(s0) });
+    }
+
+    const dNorm = D.clone().normalize();
+    candidates.sort((a, b) =>
+      Math.abs(b.screenVec.clone().normalize().dot(dNorm)) -
+      Math.abs(a.screenVec.clone().normalize().dot(dNorm)));
+    // 退化保护：最佳轴切线近乎垂直屏幕（投影过短）时换另一轴
+    let best = candidates[0];
+    if (best.screenVec.length() < 2 && candidates[1].screenVec.length() >= 2) {
+      best = candidates[1];
+    }
+
+    const axis = best.name;
+    const layerCoord = THREE.MathUtils.clamp(Math.round(drag.point[axis] / STEP), -1, 1);
+
+    drag.axis = axis;
+    drag.pivot = createPivot(axis, layerCoord);
+    drag.screenDir = best.screenVec.clone().normalize();
+    drag.pixelsPerUnit = best.screenVec.length();        // 屏幕像素 / 世界单位
+    drag.radius = Math.abs(drag.point.dot(drag.normal)); // 点击点沿法线方向的分量
+    drag.start.set(e.clientX, e.clientY);                // 从判定点重新累计，避免跳变
+    drag.determined = true;
+    isRotating = true;
+    return;
+  }
+
+  // 1:1 实时跟手：鼠标沿切线投影方向移动 d 像素
+  // → 世界距离 d / pixelsPerUnit → 旋转角 = 世界距离 / radius
+  const pixels = D.dot(drag.screenDir);
+  drag.angle = pixels / drag.pixelsPerUnit / drag.radius;
+  drag.pivot.rotation[drag.axis] = drag.angle;
+});
+
+// 磁吸效果：松手后对齐到最近的 90° 倍数
+function endDrag() {
+  if (!drag) return;
+  const d = drag;
+  drag = null;
+  if (!d.determined) return; // 仅点击未拖动
+
+  const snapped = Math.round(d.angle / HALF_PI) * HALF_PI;
+  const state = { angle: d.angle };
+  new TWEEN.Tween(state, tweenGroup)
+    .to({ angle: snapped }, SNAP_DURATION)
+    .easing(TWEEN.Easing.Quadratic.Out)
+    .onUpdate(() => { d.pivot.rotation[d.axis] = state.angle; })
+    .onComplete(() => {
+      releasePivot(d.pivot);
+      isRotating = false;
+    })
+    .start();
+}
+renderer.domElement.addEventListener('pointerup', endDrag);
+renderer.domElement.addEventListener('pointercancel', endDrag);
+
 /* ========== 8. 主循环 ========== */
 renderer.setAnimationLoop(() => {
   tweenGroup.update();
