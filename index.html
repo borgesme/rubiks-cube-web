@@ -261,6 +261,7 @@ function releasePivot(pivot) {
 
 // 程序化旋转某层（Scramble 等使用）
 function rotateLayer(axis, layerCoord, direction, duration, onComplete) {
+  if (isRotating) return; // 重入保护：动画中误调用会基于中间态筛层，导致状态损坏
   isRotating = true;
   const pivot = createPivot(axis, layerCoord);
   const state = { angle: 0 };
@@ -275,9 +276,6 @@ function rotateLayer(axis, layerCoord, direction, duration, onComplete) {
     })
     .start();
 }
-
-// 临时调试出口（Task 5 移除）
-window.__cube = { rotateLayer, selectLayer, cubies };
 
 /* ========== 6. 手势系统 ========== */
 const raycaster = new THREE.Raycaster();
@@ -398,6 +396,48 @@ function endDrag(e) {
 }
 renderer.domElement.addEventListener('pointerup', endDrag);
 renderer.domElement.addEventListener('pointercancel', endDrag);
+
+/* ========== 7. UI 控制 ========== */
+const btnScramble = document.getElementById('btn-scramble');
+const btnReset = document.getElementById('btn-reset');
+
+function setButtonsEnabled(on) {
+  btnScramble.disabled = !on;
+  btnReset.disabled = !on;
+}
+
+btnScramble.addEventListener('click', () => {
+  if (isRotating || drag) return;
+  setButtonsEnabled(false);
+
+  const axes = ['x', 'y', 'z'];
+  const moves = [];
+  let last = null;
+  while (moves.length < SCRAMBLE_STEPS) {
+    const move = {
+      axis: axes[Math.floor(Math.random() * 3)],
+      layer: Math.floor(Math.random() * 3) - 1,
+      dir: Math.random() < 0.5 ? 1 : -1,
+    };
+    // 避免与上一步同轴同层（防止互逆抵消）
+    if (last && move.axis === last.axis && move.layer === last.layer) continue;
+    moves.push(move);
+    last = move;
+  }
+
+  let i = 0;
+  (function next() {
+    if (i >= moves.length) { setButtonsEnabled(true); return; }
+    const m = moves[i++];
+    rotateLayer(m.axis, m.layer, m.dir, SCRAMBLE_DURATION, next);
+  })();
+});
+
+btnReset.addEventListener('click', () => {
+  if (isRotating || drag) return;
+  destroyCube();
+  buildCube();
+});
 
 /* ========== 8. 主循环 ========== */
 renderer.setAnimationLoop(() => {
