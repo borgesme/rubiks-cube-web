@@ -212,9 +212,74 @@ function destroyCube() {
 
 buildCube();
 
-/* ========== 8. 主循环 ========== */
+/* ========== 5. 旋转引擎 ========== */
 const tweenGroup = new TWEEN.Group();
+let isRotating = false; // 状态锁：动画期间禁止新的旋转与按钮操作
 
+// 动态层级筛选：不写死索引，基于世界坐标 + 阈值判断方块归属
+const _wp = new THREE.Vector3();
+function selectLayer(axis, layerCoord) {
+  return cubies.filter((c) => {
+    c.getWorldPosition(_wp);
+    return Math.abs(_wp[axis] - layerCoord * STEP) < EPSILON;
+  });
+}
+
+/**
+ * Pivot 挂载逻辑（关键考点）：
+ * 1. 创建临时轴心 pivot 置于原点；
+ * 2. pivot.attach(cubie)：attach 自动重算局部矩阵以保持世界变换不变，
+ *    免去手动处理复杂的四元数乘法；
+ * 3. 旋转 pivot 即可带动整层方块；
+ * 4. 结束后 scene.attach(cubie) 将方块放回场景（同样保持世界变换），销毁 pivot。
+ */
+function createPivot(axis, layerCoord) {
+  const pivot = new THREE.Object3D();
+  scene.add(pivot);
+  for (const c of selectLayer(axis, layerCoord)) pivot.attach(c);
+  return pivot;
+}
+
+// 放回场景 + 坐标清洗：位置对齐网格、欧拉角对齐 π/2，
+// 消除浮点累积误差，防止多次旋转后魔方“散架”
+function releasePivot(pivot) {
+  for (const c of [...pivot.children]) scene.attach(c);
+  scene.remove(pivot);
+  for (const c of cubies) {
+    c.position.set(
+      Math.round(c.position.x / STEP) * STEP,
+      Math.round(c.position.y / STEP) * STEP,
+      Math.round(c.position.z / STEP) * STEP,
+    );
+    c.rotation.set(
+      Math.round(c.rotation.x / HALF_PI) * HALF_PI,
+      Math.round(c.rotation.y / HALF_PI) * HALF_PI,
+      Math.round(c.rotation.z / HALF_PI) * HALF_PI,
+    );
+  }
+}
+
+// 程序化旋转某层（Scramble 等使用）
+function rotateLayer(axis, layerCoord, direction, duration, onComplete) {
+  isRotating = true;
+  const pivot = createPivot(axis, layerCoord);
+  const state = { angle: 0 };
+  new TWEEN.Tween(state, tweenGroup)
+    .to({ angle: direction * HALF_PI }, duration)
+    .easing(TWEEN.Easing.Quadratic.Out)
+    .onUpdate(() => { pivot.rotation[axis] = state.angle; })
+    .onComplete(() => {
+      releasePivot(pivot);
+      isRotating = false;
+      if (onComplete) onComplete();
+    })
+    .start();
+}
+
+// 临时调试出口（Task 5 移除）
+window.__cube = { rotateLayer, selectLayer, cubies };
+
+/* ========== 8. 主循环 ========== */
 renderer.setAnimationLoop(() => {
   tweenGroup.update();
   controls.update();
