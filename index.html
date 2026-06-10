@@ -305,6 +305,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
     .round();
 
   drag = {
+    pointerId: e.pointerId,    // 仅响应发起手势的指针，忽略多余触点
     point: hit.point.clone(),  // 点击处世界坐标
     normal,                    // 世界空间表面法线（轴对齐）
     start: new THREE.Vector2(e.clientX, e.clientY),
@@ -313,10 +314,11 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
     screenDir: null, pixelsPerUnit: 0, radius: 0,
   };
   renderer.domElement.setPointerCapture(e.pointerId);
+  controls.enabled = false; // 手势期间禁用视角控制，避免触屏单指同时转动相机
 });
 
 renderer.domElement.addEventListener('pointermove', (e) => {
-  if (!drag) return;
+  if (!drag || e.pointerId !== drag.pointerId) return;
   const D = new THREE.Vector2(e.clientX, e.clientY).sub(drag.start);
 
   if (!drag.determined) {
@@ -329,10 +331,10 @@ renderer.domElement.addEventListener('pointermove', (e) => {
      * 3. 将 T 投影到屏幕得 2D 向量 S，与鼠标位移 D 做点积；
      * 4. |dot| 最大者 = 与滑动方向最匹配的轴，即为用户意图。
      *
-     * 方向修正：旋转角直接取带符号的 dot(D, S)。点击点沿法线方向的
-     * 分量恒为正（永远点在外表面），绕 A 正向旋转必使该点沿 +T 移动，
-     * 因此 dot > 0 ⇔ 鼠标顺切线滑 ⇔ 层顺切线转——无论从正面、背面
-     * 还是顶面操作，跟手方向天然一致，无需按面分类取反。
+     * 方向修正：旋转角取带符号的 dot(D, S) 除以带符号的半径 P·N。
+     * 点在外表面时 P·N > 0，绕 A 正向旋转使该点沿 +T 移动；若射线穿过
+     * 缝隙命中内侧壁则 P·N < 0，符号同时翻转、两两抵消——无论从正面、
+     * 背面、顶面还是缝隙内壁操作，跟手方向天然一致，无需按面分类取反。
      */
     const candidates = [];
     for (const name of ['x', 'y', 'z']) {
@@ -360,7 +362,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
     drag.pivot = createPivot(axis, layerCoord);
     drag.screenDir = best.screenVec.clone().normalize();
     drag.pixelsPerUnit = best.screenVec.length();        // 屏幕像素 / 世界单位
-    drag.radius = Math.abs(drag.point.dot(drag.normal)); // 点击点沿法线方向的分量
+    drag.radius = drag.point.dot(drag.normal); // 点击点沿法线方向的带符号分量
     drag.start.set(e.clientX, e.clientY);                // 从判定点重新累计，避免跳变
     drag.determined = true;
     isRotating = true;
@@ -368,17 +370,18 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   }
 
   // 1:1 实时跟手：鼠标沿切线投影方向移动 d 像素
-  // → 世界距离 d / pixelsPerUnit → 旋转角 = 世界距离 / radius
+  // → 世界距离 d / pixelsPerUnit → 旋转角 = 世界距离 / 带符号半径 radius
   const pixels = D.dot(drag.screenDir);
   drag.angle = pixels / drag.pixelsPerUnit / drag.radius;
   drag.pivot.rotation[drag.axis] = drag.angle;
 });
 
 // 磁吸效果：松手后对齐到最近的 90° 倍数
-function endDrag() {
-  if (!drag) return;
+function endDrag(e) {
+  if (!drag || e.pointerId !== drag.pointerId) return;
   const d = drag;
   drag = null;
+  controls.enabled = true;
   if (!d.determined) return; // 仅点击未拖动
 
   const snapped = Math.round(d.angle / HALF_PI) * HALF_PI;
