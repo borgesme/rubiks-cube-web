@@ -1,0 +1,29 @@
+{
+  "name": "0610-rubiks-cube-web",
+  "version": "1.0.0",
+  "description": "> [linux.do | Claude-Fable-5-Max Three.js魔方测试](https://linux.do/t/topic/2364074)\r >\r > [Cloudflare Pages：rubiks-cube-4ci.pages.dev](https://rubiks-cube-4ci.pages.dev/)",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/borgesme/rubiks-cube-web.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/borgesme/rubiks-cube-web/issues"
+  },
+  "homepage": "https://github.com/borgesme/rubiks-cube-web#readme",
+  "devDependencies": {
+    "gifenc": "^1.0.3",
+    "playwright": "^1.60.0",
+    "pngjs": "^7.0.0"
+  }
+}

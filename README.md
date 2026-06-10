@@ -1,5 +1,7 @@
 # 高保真 魔方 3 x 3
 
+![魔方初始状态](docs/screenshots/hero.png)
+
 ## 在线体验
 
 > [GitHub Pages：borgesme.github.io/rubiks-cube-web](https://borgesme.github.io/rubiks-cube-web/)
@@ -22,3 +24,7 @@
 - 多触点过滤、手势期间禁用视角控制、Scramble（20 步）/ Reset 按钮
 
 ## 截图
+
+手动拖拽转层 + Scramble 随机打乱：
+
+![演示动画](docs/screenshots/demo.gif)
